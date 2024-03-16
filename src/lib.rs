@@ -10,22 +10,31 @@ use axum::{
 use axum_extra::extract::Form;
 use rss::Channel;
 
-pub const APP: &str = concat!("feedfilter/", env!("CARGO_PKG_VERSION"));
+/// Name & Version of this application
+pub const APP: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+pub const APP_REPO: &str = env!("CARGO_PKG_REPOSITORY");
 
 pub type HttpClient = reqwest::Client;
 
+/// Build a HTTP client
+///
+/// Client will be configured with
+/// - request timeout
+/// - user-agent header
 pub fn build_http_client() -> HttpClient {
     reqwest::Client::builder()
-        .user_agent(APP)
+        .user_agent(format!("{APP} ({APP_REPO})"))
         .timeout(Duration::from_secs(5))
         .build()
         .expect("build HTTP client")
 }
 
+/// Build the application router (sans state)
 pub fn app() -> Router<HttpClient> {
     Router::new().route("/feed", get(feed))
 }
 
+/// Query parameters for the feed endpoint
 #[derive(Debug, serde::Deserialize)]
 pub struct FeedQuery {
     url: String,
@@ -33,11 +42,12 @@ pub struct FeedQuery {
     filter: Vec<String>,
 }
 
+/// GET /feed
 pub async fn feed(
     State(http_client): State<reqwest::Client>,
     Form(query): Form<FeedQuery>,
 ) -> Result<Response, FeedError> {
-    dbg!(&query);
+    // Fetch upstream
     let req = http_client
         .get(query.url)
         .send()
@@ -46,6 +56,7 @@ pub async fn feed(
         .error_for_status()
         .map_err(FeedError::Fetch)?;
 
+    // extract upstream content type
     let content_type = req
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -53,10 +64,11 @@ pub async fn feed(
         .unwrap_or("application/rss+xml; charset=UTF-8")
         .to_owned();
 
+    // read & parse body
     let body = req.bytes().await.map_err(FeedError::Read)?;
-
     let mut channel = Channel::read_from(&body[..]).map_err(FeedError::Parse)?;
 
+    // filter items according to filter terms
     let items = channel
         .items
         .into_iter()
@@ -68,8 +80,11 @@ pub async fn feed(
                 .unwrap_or_default()
         })
         .collect();
+
+    // update parsed channel info
     channel.items = items;
 
+    // Render back as RSS
     Ok((
         [(header::SERVER, APP), (header::CONTENT_TYPE, &content_type)],
         channel.to_string(),
@@ -77,6 +92,7 @@ pub async fn feed(
         .into_response())
 }
 
+/// Errors that might occur on the feed endpoint
 #[derive(Debug, thiserror::Error)]
 pub enum FeedError {
     #[error("Failed to fetch upstream feed: {0}")]
@@ -91,9 +107,6 @@ pub enum FeedError {
 
 impl IntoResponse for FeedError {
     fn into_response(self) -> Response {
-        let status = match self {
-            Self::Fetch(_) | Self::Read(_) | Self::Parse(_) => StatusCode::BAD_GATEWAY,
-        };
-        (status, self).into_response()
+        (StatusCode::BAD_GATEWAY, self).into_response()
     }
 }

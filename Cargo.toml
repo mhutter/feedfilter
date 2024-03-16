@@ -2,6 +2,9 @@
 name = "feedfilter"
 version = "0.1.0"
 edition = "2021"
+authors = [ "Manuel Hutter (https://github.com/mhutter)" ]
+repository = "https://github.com/mhutter/feedfilter"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,3 +16,16 @@ rss = { version = "2.0.7", default-features = false }
 serde = { version = "1.0.197", features = ["derive"] }
 thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = ["rt-multi-thread", "macros", "net", "signal"] }
+
+[profile.release]
+# Enable all optimizations
+opt-level = 3
+# Disable all debug-info
+debug = "none"
+# Strip symbols & debuginfo
+strip = "symbols"
+# Enable Link-Time Optimizations
+lto = "fat"
+# Allow more aggressive optimizations
+codegen-units = 1
+# 
